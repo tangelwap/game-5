@@ -1,0 +1,11 @@
+{
+  "package_version": "2",
+  "version": "3.8.2",
+  "name": "water-sort",
+  "assets": "assets",
+  "library": "library",
+  "local": "local",
+  "temp": "temp",
+  "settings": "settings",
+  "build": "build"
+}
