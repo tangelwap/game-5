@@ -357,20 +357,50 @@ class GameEngine {
 
     getLayout() {
         const num = this.tubes.length;
-        const rows = num > 6 ? 2 : 1;
+        // Auto-layout: 
+        // If <= 5 tubes, 1 row.
+        // If > 5 tubes, 2 rows.
+        const rows = num > 5 ? 2 : 1;
         const cols = Math.ceil(num / rows);
         
-        let positions = [];
-        const totalW = cols * CONFIG.TUBE_WIDTH + (cols - 1) * CONFIG.TUBE_GAP;
+        // Dynamic Sizing: Fit to screen
+        // Available width (with 40px padding)
+        const availW = canvas.width - 40;
+        
+        // Calculate max possible tube width based on available space
+        const maxTubeW = (availW - (cols - 1) * CONFIG.TUBE_GAP) / cols;
+        // Clamp tube width between 40 and 70 (don't get too big or too small)
+        const tubeW = Math.min(Math.max(maxTubeW, 40), 70);
+        const tubeH = tubeW * 3.5; // Aspect ratio
+        
+        // Recalculate Total Width of the block
+        const totalW = cols * tubeW + (cols - 1) * CONFIG.TUBE_GAP;
+        
         const startX = (canvas.width - totalW) / 2;
-        const startY = (canvas.height - (rows * (CONFIG.TUBE_HEIGHT + 60))) / 2 + 50;
+        // Center vertically based on rows
+        const totalH = rows * tubeH + (rows - 1) * 60;
+        const startY = (canvas.height - totalH) / 2 + 30; // Slightly lower
 
+        let positions = [];
         for (let i = 0; i < num; i++) {
             const r = Math.floor(i / cols);
             const c = i % cols;
+            
+            // For the second row (if imperfect grid), center the items
+            let rowOffsetX = 0;
+            if (r === rows - 1) {
+                const itemsInLastRow = num - (r * cols);
+                if (itemsInLastRow < cols) {
+                    const lastRowW = itemsInLastRow * tubeW + (itemsInLastRow - 1) * CONFIG.TUBE_GAP;
+                    rowOffsetX = (totalW - lastRowW) / 2;
+                }
+            }
+
             positions.push({
-                x: startX + c * (CONFIG.TUBE_WIDTH + CONFIG.TUBE_GAP),
-                y: startY + r * (CONFIG.TUBE_HEIGHT + 60)
+                x: startX + c * (tubeW + CONFIG.TUBE_GAP) + rowOffsetX,
+                y: startY + r * (tubeH + 60),
+                w: tubeW,
+                h: tubeH
             });
         }
         return positions;
@@ -378,7 +408,6 @@ class GameEngine {
 
     draw() {
         // 1. Background
-        // Gradient for "Ink Wash" feel
         const grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
         grd.addColorStop(0, '#eef2f3');
         grd.addColorStop(1, '#8e9eab');
@@ -387,7 +416,7 @@ class GameEngine {
 
         // 2. Title
         ctx.fillStyle = '#37474F';
-        ctx.font = 'bold 32px serif'; // Use serif for Chinese style
+        ctx.font = 'bold 32px serif';
         ctx.textAlign = 'center';
         ctx.fillText(`第 ${this.level} 品 · 问茶`, canvas.width / 2, 80);
 
@@ -397,27 +426,22 @@ class GameEngine {
             const pos = layout[i];
             let drawY = pos.y;
             
-            // Lift animation if selected
+            // Lift animation
             if (i === this.selectedTube) drawY -= 30;
-            
-            // If this is Animation Source, tilt it (Visual trick: just lift higher)
-            if (this.anim.active && this.anim.source === i) {
-                drawY -= 50;
-                // Ideally rotate, but simplified for 2D Canvas performance
-            }
+            if (this.anim.active && this.anim.source === i) drawY -= 50;
 
-            VISUALS.drawTube(pos.x, drawY, CONFIG.TUBE_WIDTH, CONFIG.TUBE_HEIGHT, this.tubes[i], i === this.selectedTube);
+            VISUALS.drawTube(pos.x, drawY, pos.w, pos.h, this.tubes[i], i === this.selectedTube);
         }
 
-        // 4. Pouring Stream Animation
+        // 4. Stream Animation
         if (this.anim.active) {
+            const layout = this.getLayout(); // Get fresh layout
             const srcPos = layout[this.anim.source];
             const destPos = layout[this.anim.target];
             
-            // Start from top of source, end at top of dest
             VISUALS.drawStream(
-                srcPos.x + CONFIG.TUBE_WIDTH, srcPos.y - 50, // Spout
-                destPos.x + CONFIG.TUBE_WIDTH/2, destPos.y + 20, // Target center
+                srcPos.x + srcPos.w, srcPos.y - 50, 
+                destPos.x + destPos.w/2, destPos.y + 20,
                 this.anim.color
             );
         }
