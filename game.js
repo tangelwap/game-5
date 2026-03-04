@@ -1,5 +1,5 @@
-// game.js - "Zen Tea Sort" (茶韵·倒水)
-// A high-quality, Chinese-style water sort puzzle game.
+// game.js - "Zen Tea Sort: Master Edition" (茶韵·倒水大师)
+// V2.0 - High Fidelity, Fluid Animation, Complex Levels, Sound Integration
 // Engineer: Jason
 
 const systemInfo = tt.getSystemInfoSync();
@@ -8,84 +8,171 @@ const ctx = canvas.getContext('2d');
 
 // --- 1. Configuration & Constants ---
 const CONFIG = {
-    TEA_COLORS: [
-        '#00000000', // 0: Empty (Transparent)
-        '#8BC34A',   // 1: 龙井 (Longjing - Green)
-        '#D32F2F',   // 2: 普洱 (Pu'er - Red)
-        '#795548',   // 3: 乌龙 (Oolong - Brown)
-        '#FFF176',   // 4: 茉莉 (Jasmine - Yellow)
-        '#3E2723',   // 5: 黑茶 (Dark Tea)
-        '#9C27B0'    // 6: 芋泥 (Taro - Special)
+    // Colors: Vibrant, distinct layers. 0 is empty.
+    COLORS: [
+        'transparent',
+        '#FF5252', // Red (Pu'er)
+        '#448AFF', // Blue (Butterfly Pea)
+        '#69F0AE', // Green (Longjing)
+        '#FFD740', // Yellow (Jasmine)
+        '#E040FB', // Purple (Taro)
+        '#FF6E40', // Orange (Oolong)
+        '#607D8B', // Grey (Iron Buddha)
+        '#795548', // Brown (Dark Tea)
+        '#FF4081'  // Pink (Rose)
     ],
-    TEA_NAMES: ["", "龙井", "普洱", "乌龙", "茉莉", "黑茶", "芋泥"],
+    // Layout
     TUBE_WIDTH: 60,
-    TUBE_HEIGHT: 200,
-    TUBE_GAP: 20,
+    TUBE_HEIGHT: 240,
+    TUBE_GAP: 25,
     MAX_CAPACITY: 4,
-    ANIM_SPEED: 0.15 // Pouring speed
+    // Animation
+    POUR_SPEED: 8, // Pixels per frame
+    STREAM_WIDTH: 8,
 };
 
 // Force Canvas Size
 canvas.width = systemInfo.windowWidth;
 canvas.height = systemInfo.windowHeight;
 
-// --- 2. Assets (Procedural Drawing) ---
-// No external images to avoid white screen. We draw "Gaiwan" style cups.
-
-function drawTube(x, y, w, h, colors, isSelected) {
-    // 1. Draw Liquid
-    const segmentH = h / CONFIG.MAX_CAPACITY;
-    for (let i = 0; i < colors.length; i++) {
-        const colorIdx = colors[i];
-        if (colorIdx === 0) continue;
+// --- 2. Asset Management (Sound & Haptics) ---
+const AUDIO = {
+    bgm: tt.createInnerAudioContext(),
+    select: tt.createInnerAudioContext(),
+    pour: tt.createInnerAudioContext(),
+    win: tt.createInnerAudioContext(),
+    
+    init: function() {
+        this.bgm.src = 'audio/bgm.mp3'; // Gentle Guqin music
+        this.bgm.loop = true;
+        this.bgm.volume = 0.5;
         
-        ctx.fillStyle = CONFIG.TEA_COLORS[colorIdx];
-        // Bottom rounded for first segment
-        if (i === 0) {
+        this.select.src = 'audio/select.mp3'; // "Tick" sound
+        this.pour.src = 'audio/pour.mp3';     // Water flowing sound
+        this.win.src = 'audio/win.mp3';       // "Ding" or Guzheng chord
+    },
+    
+    play: function(name) {
+        if (this[name]) {
+            this[name].stop();
+            this[name].play();
+        }
+        // Haptics
+        if (name === 'select') tt.vibrateShort();
+        if (name === 'win') tt.vibrateLong();
+    }
+};
+
+// Initialize Audio
+AUDIO.init();
+
+// --- 3. Visual System (Drawing) ---
+const VISUALS = {
+    drawTube: function(x, y, w, h, colors, isSelected) {
+        // 1. Draw Liquid Layers
+        const segmentH = h / CONFIG.MAX_CAPACITY;
+        
+        // Draw from bottom up
+        for (let i = 0; i < colors.length; i++) {
+            const colorIdx = colors[i];
+            if (colorIdx === 0) continue;
+            
+            ctx.fillStyle = CONFIG.COLORS[colorIdx];
+            
+            const ly = y + h - (i + 1) * segmentH;
+            
+            // Mask for rounded bottom (First layer)
+            ctx.save();
             ctx.beginPath();
-            ctx.moveTo(x, y + h - segmentH);
-            ctx.lineTo(x, y + h - 10);
-            ctx.quadraticCurveTo(x + w/2, y + h + 10, x + w, y + h - 10);
-            ctx.lineTo(x + w, y + h - segmentH);
+            if (i === 0) {
+                ctx.moveTo(x, ly);
+                ctx.lineTo(x, y + h - 15);
+                ctx.quadraticCurveTo(x + w/2, y + h + 15, x + w, y + h - 15);
+                ctx.lineTo(x + w, ly);
+            } else {
+                ctx.rect(x, ly, w, segmentH);
+            }
+            ctx.closePath();
+            ctx.clip();
+            
+            // Fill color
+            ctx.fillRect(x, ly, w, segmentH);
+            
+            // Add "Liquid" Highlight (Glass effect)
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
+            ctx.fillRect(x + 5, ly, 10, segmentH);
+            
+            ctx.restore();
+        }
+
+        // 2. Draw Glass Container
+        ctx.strokeStyle = isSelected ? '#FFD700' : 'rgba(255, 255, 255, 0.6)';
+        ctx.lineWidth = isSelected ? 4 : 2;
+        
+        ctx.beginPath();
+        ctx.moveTo(x, y); 
+        ctx.lineTo(x, y + h - 15); 
+        ctx.quadraticCurveTo(x + w/2, y + h + 15, x + w, y + h - 15); 
+        ctx.lineTo(x + w, y); 
+        ctx.stroke();
+
+        // 3. Rim
+        ctx.beginPath();
+        ctx.ellipse(x + w/2, y, w/2, 6, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        
+        // 4. Glass Reflection (Shininess)
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x + w - 10, y + 20);
+        ctx.lineTo(x + w - 10, y + h - 20);
+        ctx.lineWidth = 2;
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.3)';
+        ctx.stroke();
+        ctx.restore();
+    },
+
+    drawStream: function(startX, startY, endX, endY, color) {
+        // Bezier Curve for Pouring
+        ctx.beginPath();
+        ctx.moveTo(startX, startY);
+        // Control point is mid-way X, but higher Y to simulate arc
+        const cpX = (startX + endX) / 2;
+        const cpY = Math.min(startY, endY) - 50;
+        
+        ctx.quadraticCurveTo(cpX, cpY, endX, endY);
+        
+        ctx.lineWidth = CONFIG.STREAM_WIDTH;
+        ctx.strokeStyle = color;
+        ctx.lineCap = 'round';
+        ctx.stroke();
+        
+        // Splash particles at end
+        ctx.fillStyle = color;
+        for(let i=0; i<3; i++) {
+            ctx.beginPath();
+            ctx.arc(endX + (Math.random()-0.5)*10, endY + (Math.random()-0.5)*5, 3, 0, Math.PI*2);
             ctx.fill();
-        } else {
-            ctx.fillRect(x, y + h - (i + 1) * segmentH, w, segmentH);
         }
     }
+};
 
-    // 2. Draw Glass/Tube Outline
-    ctx.strokeStyle = isSelected ? '#FFD700' : 'rgba(255, 255, 255, 0.8)';
-    ctx.lineWidth = isSelected ? 4 : 2;
-    
-    ctx.beginPath();
-    ctx.moveTo(x, y); // Top Left
-    ctx.lineTo(x, y + h - 10); // Bottom Left
-    ctx.quadraticCurveTo(x + w/2, y + h + 10, x + w, y + h - 10); // Rounded Bottom
-    ctx.lineTo(x + w, y); // Top Right
-    ctx.stroke();
-
-    // 3. Rim
-    ctx.beginPath();
-    ctx.ellipse(x + w/2, y, w/2, 5, 0, 0, Math.PI * 2);
-    ctx.stroke();
-}
-
-// --- 3. Game Logic (Engine) ---
+// --- 4. Game Engine (Logic & State) ---
 class GameEngine {
     constructor() {
         this.level = 1;
-        this.tubes = []; // Array of arrays
-        this.history = []; // Undo stack
+        this.tubes = []; 
+        this.history = []; 
         this.selectedTube = -1;
-        this.isAnimating = false;
-        this.animState = null; // { source, target, progress }
         
-        // Sound Stub
-        this.sounds = {
-            pour: tt.createInnerAudioContext(),
-            win: tt.createInnerAudioContext()
+        // Animation State
+        this.anim = {
+            active: false,
+            source: -1,
+            target: -1,
+            color: null,
+            progress: 0
         };
-        // Ideally set src here: this.sounds.pour.src = 'audio/pour.mp3';
 
         this.initLevel(1);
     }
@@ -94,101 +181,83 @@ class GameEngine {
         this.level = level;
         this.history = [];
         this.selectedTube = -1;
-        
-        // Simple Level Generator (Reverse Shuffle)
-        // Start sorted, then mix.
-        const numColors = Math.min(3 + Math.floor(level / 2), 6); // Max 6 colors
-        const numTubes = numColors + 2; // Always 2 empty
-        
-        // 1. Create sorted state
+        this.anim.active = false;
+
+        // COMPLEX LEVEL GENERATOR (Reverse Shuffle)
+        // 1. Determine parameters based on level
+        const numColors = Math.min(3 + Math.floor((level - 1) / 2), 9); 
+        const numEmpty = 2;
+        const numTubes = numColors + numEmpty;
+
+        // 2. Create Solved State
         let state = [];
         for (let i = 1; i <= numColors; i++) {
-            state.push(Array(4).fill(i));
+            state.push(Array(4).fill(i)); // Full tubes of single color
         }
-        state.push([], []); // Empty tubes
+        for (let i = 0; i < numEmpty; i++) {
+            state.push([]); // Empty tubes
+        }
+
+        // 3. Shuffle (Reverse Moves) - The Key to "Complex but Solvable"
+        // We simulate valid reverse moves: take from A, pour to B (if B has space)
+        // To make it look "messy", we must do many moves.
+        const moves = 50 + level * 20;
         
-        // 2. Shuffle (Reverse Moves)
-        // Since we want a solvable puzzle, we just perform valid moves backwards? 
-        // Actually, just random filling is risky.
-        // Let's use a "Shuffle" strategy: Take top of random non-empty A, put in random non-full B.
-        // Repeat N times.
-        const moves = 50 + level * 10;
         for (let m = 0; m < moves; m++) {
-            const from = Math.floor(Math.random() * numTubes);
-            const to = Math.floor(Math.random() * numTubes);
-            if (from === to) continue;
-            if (state[from].length > 0 && state[to].length < 4) {
-                state[to].push(state[from].pop());
-            }
+            // Pick random source (must not be empty)
+            let srcIdx = Math.floor(Math.random() * numTubes);
+            if (state[srcIdx].length === 0) continue;
+            
+            // Pick random dest (must have space < 4)
+            let destIdx = Math.floor(Math.random() * numTubes);
+            if (srcIdx === destIdx) continue;
+            if (state[destIdx].length >= 4) continue;
+            
+            // Move one unit
+            const color = state[srcIdx].pop();
+            state[destIdx].push(color);
         }
         
         this.tubes = state;
-        // Check if accidentally solved? Unlikely.
+        
+        // Background Music
+        AUDIO.bgm.play();
     }
 
-    saveState() {
-        // Deep copy
-        const snapshot = JSON.parse(JSON.stringify(this.tubes));
-        this.history.push(snapshot);
-        if (this.history.length > 5) this.history.shift(); // Limit undo
-    }
-
-    undo() {
-        if (this.history.length > 0) {
-            this.tubes = this.history.pop();
-            this.selectedTube = -1;
-            tt.vibrateShort();
-        }
-    }
-
+    // Interaction
     handleTouch(x, y) {
-        if (this.isAnimating) return;
+        if (this.anim.active) return; // Block input during animation
 
-        // 1. Check UI Buttons (Undo / Restart)
-        if (y > canvas.height - 80) {
-            if (x < canvas.width / 2) this.undo();
-            else this.initLevel(this.level); // Restart
+        // UI Buttons (Bottom Area)
+        if (y > canvas.height - 100) {
+            if (x < canvas.width / 3) this.undo();
+            else if (x > canvas.width * 2/3) this.initLevel(this.level); // Restart
             return;
         }
 
-        // 2. Check Tubes
-        // Calculate layout
-        const numTubes = this.tubes.length;
-        const rows = numTubes > 6 ? 2 : 1;
-        const tubesPerRow = Math.ceil(numTubes / rows);
+        // Calculate Tube Layout
+        const layout = this.getLayout();
         
-        const startX = (canvas.width - (tubesPerRow * (CONFIG.TUBE_WIDTH + CONFIG.TUBE_GAP))) / 2 + CONFIG.TUBE_GAP/2;
-        const startY = canvas.height / 2 - 100;
-
-        let clickedIndex = -1;
-        
-        for (let i = 0; i < numTubes; i++) {
-            const row = Math.floor(i / tubesPerRow);
-            const col = i % tubesPerRow;
-            const tx = startX + col * (CONFIG.TUBE_WIDTH + CONFIG.TUBE_GAP);
-            const ty = startY + row * (CONFIG.TUBE_HEIGHT + 50);
-            
-            if (x >= tx && x <= tx + CONFIG.TUBE_WIDTH && 
-                y >= ty && y <= ty + CONFIG.TUBE_HEIGHT) {
-                clickedIndex = i;
-                break;
+        for (let i = 0; i < this.tubes.length; i++) {
+            const pos = layout[i];
+            if (x >= pos.x && x <= pos.x + CONFIG.TUBE_WIDTH &&
+                y >= pos.y && y <= pos.y + CONFIG.TUBE_HEIGHT) {
+                
+                this.handleTubeClick(i);
+                return;
             }
-        }
-
-        if (clickedIndex !== -1) {
-            this.handleTubeClick(clickedIndex);
         }
     }
 
     handleTubeClick(index) {
         if (this.selectedTube === -1) {
-            // Select
+            // Select Source
             if (this.tubes[index].length > 0) {
                 this.selectedTube = index;
-                tt.vibrateShort();
+                AUDIO.play('select');
             }
         } else {
-            // Move
+            // Select Target
             if (this.selectedTube === index) {
                 this.selectedTube = -1; // Deselect
             } else {
@@ -198,30 +267,50 @@ class GameEngine {
     }
 
     tryMove(from, to) {
-        const sourceTube = this.tubes[from];
-        const targetTube = this.tubes[to];
+        const src = this.tubes[from];
+        const dest = this.tubes[to];
 
-        if (sourceTube.length === 0) return; // Should not happen
-        if (targetTube.length >= 4) return; // Full
-
-        const colorToMove = sourceTube[sourceTube.length - 1];
+        // Validations
+        if (dest.length >= 4) {
+            this.selectedTube = -1;
+            return; 
+        }
         
-        // Rule: Target must be empty OR top color must match
-        if (targetTube.length === 0 || targetTube[targetTube.length - 1] === colorToMove) {
-            // Valid Move
-            this.saveState();
+        const color = src[src.length - 1];
+        // Rules: Target empty OR Top color matches
+        if (dest.length === 0 || dest[dest.length - 1] === color) {
             
-            // Animation logic would go here, simplified to immediate for V1
-            targetTube.push(sourceTube.pop());
+            // START ANIMATION
+            this.saveState(); // Save history before move
+            
+            this.anim.active = true;
+            this.anim.source = from;
+            this.anim.target = to;
+            this.anim.color = CONFIG.COLORS[color]; // Get hex color
+            this.anim.progress = 0;
+            
+            // Actually move data AFTER animation (or during)
+            // For simplicity in loop, we move data now but visually animate
+            src.pop();
+            dest.push(color);
+            
+            AUDIO.play('pour');
+            this.selectedTube = -1;
+            
+        } else {
+            // Invalid move feedback
             this.selectedTube = -1;
             tt.vibrateShort();
-            
-            // Check Win
-            this.checkWin();
-        } else {
-            // Invalid
-            tt.vibrateShort(); // Double vibrate?
-            this.selectedTube = -1;
+        }
+    }
+
+    update() {
+        if (this.anim.active) {
+            this.anim.progress += 0.1; // Speed
+            if (this.anim.progress >= 1) {
+                this.anim.active = false;
+                this.checkWin();
+            }
         }
     }
 
@@ -232,20 +321,19 @@ class GameEngine {
                 completed++;
                 continue;
             }
-            if (tube.length < 4) return; // Not full
-            const color = tube[0];
-            for (let c of tube) {
-                if (c !== color) return; // Mixed
-            }
+            if (tube.length < 4) return;
+            // Check uniformity
+            const c = tube[0];
+            if (!tube.every(x => x === c)) return;
             completed++;
         }
-        
+
         if (completed === this.tubes.length) {
-            // Win!
+            AUDIO.play('win');
             tt.showModal({
                 title: '好茶！(Excellent!)',
-                content: `恭喜通过第 ${this.level} 品。`,
-                confirmText: '下一品',
+                content: `恭喜通过第 ${this.level} 品。\n进入下一品？`,
+                confirmText: '继续',
                 showCancel: false,
                 success: () => {
                     this.initLevel(this.level + 1);
@@ -254,56 +342,105 @@ class GameEngine {
         }
     }
 
-    draw() {
-        // 1. Background (Rice Paper Color)
-        ctx.fillStyle = '#F3F0E6';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    undo() {
+        if (this.history.length > 0) {
+            this.tubes = this.history.pop();
+            this.selectedTube = -1;
+            tt.vibrateShort();
+        }
+    }
+
+    saveState() {
+        this.history.push(JSON.parse(JSON.stringify(this.tubes)));
+        if (this.history.length > 10) this.history.shift();
+    }
+
+    getLayout() {
+        const num = this.tubes.length;
+        const rows = num > 6 ? 2 : 1;
+        const cols = Math.ceil(num / rows);
         
+        let positions = [];
+        const totalW = cols * CONFIG.TUBE_WIDTH + (cols - 1) * CONFIG.TUBE_GAP;
+        const startX = (canvas.width - totalW) / 2;
+        const startY = (canvas.height - (rows * (CONFIG.TUBE_HEIGHT + 60))) / 2 + 50;
+
+        for (let i = 0; i < num; i++) {
+            const r = Math.floor(i / cols);
+            const c = i % cols;
+            positions.push({
+                x: startX + c * (CONFIG.TUBE_WIDTH + CONFIG.TUBE_GAP),
+                y: startY + r * (CONFIG.TUBE_HEIGHT + 60)
+            });
+        }
+        return positions;
+    }
+
+    draw() {
+        // 1. Background
+        // Gradient for "Ink Wash" feel
+        const grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
+        grd.addColorStop(0, '#eef2f3');
+        grd.addColorStop(1, '#8e9eab');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
         // 2. Title
-        ctx.fillStyle = '#3E2723';
-        ctx.font = 'bold 30px serif';
+        ctx.fillStyle = '#37474F';
+        ctx.font = 'bold 32px serif'; // Use serif for Chinese style
         ctx.textAlign = 'center';
         ctx.fillText(`第 ${this.level} 品 · 问茶`, canvas.width / 2, 80);
 
         // 3. Tubes
-        const numTubes = this.tubes.length;
-        const rows = numTubes > 6 ? 2 : 1;
-        const tubesPerRow = Math.ceil(numTubes / rows);
-        
-        const startX = (canvas.width - (tubesPerRow * (CONFIG.TUBE_WIDTH + CONFIG.TUBE_GAP))) / 2 + CONFIG.TUBE_GAP/2;
-        const startY = canvas.height / 2 - 100;
-
-        for (let i = 0; i < numTubes; i++) {
-            const row = Math.floor(i / tubesPerRow);
-            const col = i % tubesPerRow;
+        const layout = this.getLayout();
+        for (let i = 0; i < this.tubes.length; i++) {
+            const pos = layout[i];
+            let drawY = pos.y;
             
-            let tx = startX + col * (CONFIG.TUBE_WIDTH + CONFIG.TUBE_GAP);
-            let ty = startY + row * (CONFIG.TUBE_HEIGHT + 50);
+            // Lift animation if selected
+            if (i === this.selectedTube) drawY -= 30;
+            
+            // If this is Animation Source, tilt it (Visual trick: just lift higher)
+            if (this.anim.active && this.anim.source === i) {
+                drawY -= 50;
+                // Ideally rotate, but simplified for 2D Canvas performance
+            }
 
-            // Selected lift effect
-            if (i === this.selectedTube) ty -= 20;
-
-            drawTube(tx, ty, CONFIG.TUBE_WIDTH, CONFIG.TUBE_HEIGHT, this.tubes[i], i === this.selectedTube);
+            VISUALS.drawTube(pos.x, drawY, CONFIG.TUBE_WIDTH, CONFIG.TUBE_HEIGHT, this.tubes[i], i === this.selectedTube);
         }
 
-        // 4. UI Buttons
-        const btnY = canvas.height - 50;
-        ctx.fillStyle = '#795548';
-        ctx.font = '20px Arial';
-        ctx.fillText("悔棋 (Undo)", canvas.width / 4, btnY);
-        ctx.fillText("重置 (Reset)", canvas.width * 3 / 4, btnY);
+        // 4. Pouring Stream Animation
+        if (this.anim.active) {
+            const srcPos = layout[this.anim.source];
+            const destPos = layout[this.anim.target];
+            
+            // Start from top of source, end at top of dest
+            VISUALS.drawStream(
+                srcPos.x + CONFIG.TUBE_WIDTH, srcPos.y - 50, // Spout
+                destPos.x + CONFIG.TUBE_WIDTH/2, destPos.y + 20, // Target center
+                this.anim.color
+            );
+        }
+
+        // 5. UI
+        const btnY = canvas.height - 60;
+        ctx.fillStyle = '#37474F';
+        ctx.font = '24px Arial';
+        ctx.fillText("⟲ 悔棋", canvas.width * 0.25, btnY);
+        ctx.fillText("↻ 重置", canvas.width * 0.75, btnY);
     }
 }
 
-// --- 4. Main Loop ---
+// --- 5. Main Loop ---
 const game = new GameEngine();
 
 function loop() {
+    game.update();
     game.draw();
     requestAnimationFrame(loop);
 }
 
-// Input
+// Input Handling
 tt.onTouchStart((e) => {
     const t = e.touches[0];
     game.handleTouch(t.clientX, t.clientY);
