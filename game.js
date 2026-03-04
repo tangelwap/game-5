@@ -61,66 +61,126 @@ AUDIO.init();
 const VISUALS = {
     drawTube: function(x, y, w, h, colors, isSelected) {
         const segmentH = h / CONFIG.MAX_CAPACITY;
-        
-        // 1. Liquid
+        const rx = w / 2;          // x-radius
+        const bottomCY = y + h;    // bottom ellipse center Y
+
+        // --- Clip: Rounded Bottom ---
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x + 4, y);
+        ctx.lineTo(x + 4, y + h - rx);
+        ctx.quadraticCurveTo(x + 4, bottomCY, x + rx, bottomCY);
+        ctx.quadraticCurveTo(x + w - 4, bottomCY, x + w - 4, y + h - rx);
+        ctx.lineTo(x + w - 4, y);
+        ctx.closePath();
+        ctx.clip();
+
+        // --- Liquid Layers ---
         for (let i = 0; i < colors.length; i++) {
             const colorIdx = colors[i];
-            if (colorIdx === 0) continue;
-            
-            ctx.fillStyle = CONFIG.COLORS[colorIdx];
+            if (!colorIdx) continue;
+            const hex = CONFIG.COLORS[colorIdx];
             const ly = y + h - (i + 1) * segmentH;
-            
+
+            ctx.fillStyle = hex;
+            ctx.fillRect(x + 4, ly, w - 8, segmentH);
+
+            // Highlight Top Edge
+            const gradient = ctx.createLinearGradient(x, ly, x, ly + segmentH * 0.3);
+            gradient.addColorStop(0, 'rgba(255,255,255,0.35)');
+            gradient.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = gradient;
+            ctx.fillRect(x + 4, ly, w - 8, segmentH * 0.35);
+        }
+        ctx.restore();
+
+        // --- Glass Outline ---
+        ctx.save();
+        ctx.strokeStyle = isSelected
+            ? '#FFD700'
+            : 'rgba(180, 220, 255, 0.55)';
+        ctx.lineWidth = isSelected ? 3.5 : 2;
+
+        ctx.beginPath();
+        ctx.moveTo(x, y);
+        ctx.lineTo(x, y + h - rx);
+        ctx.quadraticCurveTo(x, bottomCY, x + rx, bottomCY);
+        ctx.quadraticCurveTo(x + w, bottomCY, x + w, y + h - rx);
+        ctx.lineTo(x + w, y);
+        ctx.stroke();
+        ctx.restore();
+
+        // --- Rim ---
+        ctx.save();
+        ctx.strokeStyle = isSelected ? '#FFD700' : 'rgba(180,220,255,0.55)';
+        ctx.lineWidth = isSelected ? 3.5 : 2;
+        ctx.beginPath();
+        ctx.ellipse(x + rx, y, rx, 6, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.restore();
+
+        // --- Glass Shine (Left) ---
+        const shine = ctx.createLinearGradient(x, y, x + w * 0.35, y);
+        shine.addColorStop(0, 'rgba(255,255,255,0.0)');
+        shine.addColorStop(0.4, 'rgba(255,255,255,0.22)');
+        shine.addColorStop(1, 'rgba(255,255,255,0.0)');
+        ctx.save();
+        ctx.beginPath();
+        ctx.rect(x, y, w * 0.35, h);
+        ctx.clip();
+        ctx.fillStyle = shine;
+        ctx.fillRect(x, y, w * 0.35, h);
+        ctx.restore();
+
+        // Selected Glow
+        if (isSelected) {
             ctx.save();
-            ctx.beginPath();
-            if (i === 0) {
-                ctx.moveTo(x, ly);
-                ctx.lineTo(x, y + h - 15);
-                ctx.quadraticCurveTo(x + w/2, y + h + 15, x + w, y + h - 15);
-                ctx.lineTo(x + w, ly);
-            } else {
-                ctx.rect(x, ly, w, segmentH);
-            }
-            ctx.closePath();
-            ctx.clip();
-            ctx.fillRect(x, ly, w, segmentH);
-            // Highlight
-            ctx.fillStyle = 'rgba(255, 255, 255, 0.15)';
-            ctx.fillRect(x + 5, ly, 8, segmentH);
+            const glow = ctx.createRadialGradient(x+rx, bottomCY, 0, x+rx, bottomCY, rx*2);
+            glow.addColorStop(0, 'rgba(255,215,0,0.4)');
+            glow.addColorStop(1, 'rgba(255,215,0,0)');
+            ctx.fillStyle = glow;
+            ctx.fillRect(x - rx, bottomCY - rx, w + rx*2, rx*2);
             ctx.restore();
         }
-
-        // 2. Glass
-        ctx.strokeStyle = isSelected ? '#FFD700' : 'rgba(255, 255, 255, 0.5)';
-        ctx.lineWidth = isSelected ? 4 : 2;
-        ctx.beginPath();
-        ctx.moveTo(x, y); 
-        ctx.lineTo(x, y + h - 15); 
-        ctx.quadraticCurveTo(x + w/2, y + h + 15, x + w, y + h - 15); 
-        ctx.lineTo(x + w, y); 
-        ctx.stroke();
-
-        // 3. Rim
-        ctx.beginPath();
-        ctx.ellipse(x + w/2, y, w/2, 6, 0, 0, Math.PI * 2);
-        ctx.stroke();
     },
 
     drawStream: function(sx, sy, ex, ey, color) {
+        // Main Stream (Thick)
         ctx.beginPath();
         ctx.moveTo(sx, sy);
-        const cpX = (sx + ex) / 2;
-        const cpY = Math.min(sy, ey) - 50;
+        const cpX = sx * 0.3 + ex * 0.7;
+        const cpY = (sy + ey) / 2 - 40;
         ctx.quadraticCurveTo(cpX, cpY, ex, ey);
-        ctx.lineWidth = 8;
+        ctx.lineWidth = 10;
         ctx.strokeStyle = color;
         ctx.lineCap = 'round';
+        ctx.globalAlpha = 0.9;
         ctx.stroke();
-        
-        // Splash
-        ctx.fillStyle = color;
+
+        // Highlight (Thin)
         ctx.beginPath();
-        ctx.arc(ex, ey, 5, 0, Math.PI*2);
-        ctx.fill();
+        ctx.moveTo(sx + 3, sy);
+        ctx.quadraticCurveTo(cpX + 3, cpY, ex + 3, ey);
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.stroke();
+        ctx.globalAlpha = 1.0;
+
+        // Splash Particles
+        for (let i = 0; i < 5; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const dist = Math.random() * 12;
+            ctx.beginPath();
+            ctx.arc(
+                ex + Math.cos(angle)*dist,
+                ey + Math.sin(angle)*dist * 0.5,
+                Math.random()*3 + 1, 0, Math.PI*2
+            );
+            ctx.fillStyle = color;
+            ctx.globalAlpha = Math.random() * 0.7 + 0.3;
+            ctx.fill();
+            ctx.globalAlpha = 1;
+        }
     }
 };
 
@@ -391,14 +451,30 @@ class GameEngine {
     }
 
     draw() {
-        // BG
+        // 1. Background
         const grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        grd.addColorStop(0, '#1a2a6c'); 
-        grd.addColorStop(1, '#b21f1f'); 
+        grd.addColorStop(0, '#1B1464'); // Deep Purple-Blue
+        grd.addColorStop(1, '#2E0854'); // Darker Purple
         ctx.fillStyle = grd;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Title
+        // Draw Stars
+        if (!this.stars) {
+            this.stars = Array.from({length: 80}, () => ({
+                x: Math.random() * canvas.width,
+                y: Math.random() * canvas.height,
+                r: Math.random() * 1.5 + 0.5,
+                alpha: Math.random() * 0.5 + 0.3
+            }));
+        }
+        this.stars.forEach(s => {
+            ctx.beginPath();
+            ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
+            ctx.fillStyle = `rgba(255,255,255,${s.alpha})`;
+            ctx.fill();
+        });
+
+        // 2. Title
         ctx.fillStyle = '#FFF';
         ctx.font = 'bold 32px Arial';
         ctx.textAlign = 'center';
@@ -419,32 +495,19 @@ class GameEngine {
 
         // Draw Animating Tube
         if (this.anim.active) {
-            // We need to simulate the "Old State" visually during pour
-            // Because real data hasn't changed until END of POURING.
-            // Wait, if we use real data, it's full. That's good.
-            // Visually we want the liquid to decrease? 
-            // Complex. For V2.6, let's keep it full until it snaps back. 
-            // To fix visual, we pass a "temp" tube data?
-            // Actually, simply drawing it is fine for now.
-            
             ctx.save();
             const w = layout[this.anim.source].w;
             const h = layout[this.anim.source].h;
             
-            // Translate to top-center of the tube for rotation
             ctx.translate(this.anim.x + w/2, this.anim.y);
             ctx.rotate(this.anim.angle);
             
-            // Draw offset by -w/2
             VISUALS.drawTube(-w/2, 0, w, h, this.tubes[this.anim.source], true);
             ctx.restore();
 
             // Stream
             if (this.anim.phase === 'POURING') {
                 const destPos = layout[this.anim.target];
-                // Tip calculation
-                const tipX = this.anim.x + w/2 + (h/2 * Math.sin(this.anim.angle)); // Rough approx
-                // Actually, let's just anchor stream to anim.x + w (right side)
                 const spoutX = this.anim.x + w * Math.cos(this.anim.angle);
                 const spoutY = this.anim.y + w * Math.sin(this.anim.angle);
 
@@ -456,12 +519,65 @@ class GameEngine {
             }
         }
 
+        // Particles
+        this._updateParticles();
+        this._drawParticles();
+
         // UI
         const btnY = canvas.height - 60;
         ctx.fillStyle = '#FFF';
         ctx.font = '24px Arial';
         ctx.fillText("⟲ 悔棋", canvas.width * 0.25, btnY);
         ctx.fillText("↻ 重置", canvas.width * 0.75, btnY);
+    }
+
+    // Particle System
+    _spawnParticles() {
+        if (!this.particles) this.particles = [];
+        const colors = ['#FF5252','#FFD740','#69F0AE','#448AFF','#E040FB','#FF6E40','#FF4081'];
+        for (let i = 0; i < 80; i++) {
+            const angle = Math.random() * Math.PI * 2;
+            const speed = Math.random() * 6 + 2;
+            this.particles.push({
+                x: canvas.width / 2,
+                y: canvas.height / 2,
+                vx: Math.cos(angle) * speed,
+                vy: Math.sin(angle) * speed - 3,
+                color: colors[Math.floor(Math.random() * colors.length)],
+                life: 1.0,
+                size: Math.random() * 6 + 3,
+                shape: Math.random() > 0.5 ? 'circle' : 'rect'
+            });
+        }
+    }
+
+    _updateParticles() {
+        if (!this.particles) return;
+        this.particles = this.particles.filter(p => p.life > 0);
+        this.particles.forEach(p => {
+            p.x += p.vx;
+            p.y += p.vy;
+            p.vy += 0.15; // gravity
+            p.life -= 0.018;
+            p.vx *= 0.98;
+        });
+    }
+
+    _drawParticles() {
+        if (!this.particles) return;
+        this.particles.forEach(p => {
+            ctx.save();
+            ctx.globalAlpha = p.life;
+            ctx.fillStyle = p.color;
+            if (p.shape === 'circle') {
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI*2);
+                ctx.fill();
+            } else {
+                ctx.fillRect(p.x - p.size/2, p.y - p.size/2, p.size, p.size * 0.5);
+            }
+            ctx.restore();
+        });
     }
 }
 
