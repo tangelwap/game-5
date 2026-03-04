@@ -28,17 +28,59 @@ const AUDIO = {
     bgm: tt.createInnerAudioContext(),
     select: tt.createInnerAudioContext(),
     pour: tt.createInnerAudioContext(),
+    complete: tt.createInnerAudioContext(), // New
     win: tt.createInnerAudioContext(),
+    error: tt.createInnerAudioContext(),    // New
     isPlaying: false,
     
     init: function() {
         this.bgm.src = 'audio/bgm.mp3';
         this.bgm.loop = true;
+        this.bgm.volume = 0.4;
+        
         this.select.src = 'audio/select.mp3';
+        this.select.volume = 0.6;
+        
         this.pour.src = 'audio/pour.mp3';
+        this.pour.loop = true;
+        this.pour.volume = 0; // Fade in
+        
+        this.complete.src = 'audio/complete.mp3';
+        this.complete.volume = 0.8;
+        
         this.win.src = 'audio/win.mp3';
+        this.win.volume = 1.0;
+        
+        this.error.src = 'audio/error.mp3';
+        this.error.volume = 0.5;
     },
     
+    startPour: function() {
+        this.pour.stop();
+        this.pour.volume = 0;
+        this.pour.play();
+        let vol = 0;
+        if (this._pourRamp) clearInterval(this._pourRamp);
+        this._pourRamp = setInterval(() => {
+            vol = Math.min(vol + 0.1, 0.8);
+            this.pour.volume = vol;
+            if (vol >= 0.8) clearInterval(this._pourRamp);
+        }, 30);
+    },
+
+    stopPour: function() {
+        if (this._pourRamp) clearInterval(this._pourRamp);
+        let vol = this.pour.volume;
+        const fade = setInterval(() => {
+            vol = Math.max(vol - 0.1, 0);
+            this.pour.volume = vol;
+            if (vol <= 0) {
+                this.pour.stop();
+                clearInterval(fade);
+            }
+        }, 30);
+    },
+
     play: function(name) {
         if (name === 'bgm') {
             if (!this.isPlaying) {
@@ -47,11 +89,18 @@ const AUDIO = {
             }
             return;
         }
+        if (name === 'pour_start') { this.startPour(); return; }
+        if (name === 'pour_stop') { this.stopPour(); return; }
+        
         if (this[name]) {
             this[name].stop();
             this[name].play();
         }
-        if (name === 'select') tt.vibrateShort();
+        
+        // Haptics
+        if (name === 'select') tt.vibrateShort({ type: 'light' });
+        if (name === 'complete') tt.vibrateShort({ type: 'medium' });
+        if (name === 'error') tt.vibrateShort({ type: 'heavy' });
         if (name === 'win') tt.vibrateLong();
     }
 };
@@ -59,10 +108,10 @@ AUDIO.init();
 
 // --- 3. Visuals ---
 const VISUALS = {
-    drawTube: function(x, y, w, h, colors, isSelected) {
+    drawTube: function(x, y, w, h, colors, isSelected, waveOffset = 0) {
         const segmentH = h / CONFIG.MAX_CAPACITY;
-        const rx = w / 2;          // x-radius
-        const bottomCY = y + h;    // bottom ellipse center Y
+        const rx = w / 2;          
+        const bottomCY = y + h;    
 
         // --- Clip: Rounded Bottom ---
         ctx.save();
@@ -75,32 +124,151 @@ const VISUALS = {
         ctx.closePath();
         ctx.clip();
 
-        // --- Liquid Layers ---
+        // --- Liquid Layers (Wavy) ---
         for (let i = 0; i < colors.length; i++) {
             const colorIdx = colors[i];
             if (!colorIdx) continue;
+            
             const hex = CONFIG.COLORS[colorIdx];
             const ly = y + h - (i + 1) * segmentH;
-
-            ctx.fillStyle = hex;
-            ctx.fillRect(x + 4, ly, w - 8, segmentH);
-
-            // Highlight Top Edge
-            const gradient = ctx.createLinearGradient(x, ly, x, ly + segmentH * 0.3);
-            gradient.addColorStop(0, 'rgba(255,255,255,0.35)');
-            gradient.addColorStop(1, 'rgba(255,255,255,0)');
-            ctx.fillStyle = gradient;
-            ctx.fillRect(x + 4, ly, w - 8, segmentH * 0.35);
+            
+            // Draw Wavy Layer
+            VISUALS._drawLiquidLayer(x, y, w, h, ly, segmentH, hex, waveOffset, i === colors.length-1);
         }
         ctx.restore();
 
-        // --- Glass Outline ---
-        ctx.save();
-        ctx.strokeStyle = isSelected
-            ? '#FFD700'
-            : 'rgba(180, 220, 255, 0.55)';
-        ctx.lineWidth = isSelected ? 3.5 : 2;
+        // --- Glass & Highlight ---
+        VISUALS._drawGlassShell(x, y, w, h, rx, bottomCY, isSelected);
+    },
 
+    drawTubeWithRising: function(x, y, w, h, baseColors, risingColorId, risingCount, progress, waveOffset) {
+        const segmentH = h / CONFIG.MAX_CAPACITY;
+        const rx = w / 2;
+        const bottomCY = y + h;
+        const risingHex = CONFIG.COLORS[risingColorId];
+
+        ctx.save();
+        ctx.beginPath();
+        ctx.moveTo(x + 4, y);
+        ctx.lineTo(x + 4, y + h - rx);
+        ctx.quadraticCurveTo(x + 4, bottomCY, x + rx, bottomCY);
+        ctx.quadraticCurveTo(x + w - 4, bottomCY, x + w - 4, y + h - rx);
+        ctx.lineTo(x + w - 4, y);
+        ctx.closePath();
+        ctx.clip();
+
+        // Existing Layers
+        for (let i = 0; i < baseColors.length; i++) {
+            const hex = CONFIG.COLORS[baseColors[i]];
+            const ly = y + h - (i + 1) * segmentH;
+            VISUALS._drawLiquidLayer(x, y, w, h, ly, segmentH, hex, waveOffset, false);
+        }
+
+        // Rising Layer
+        const risingH = risingCount * segmentH * progress;
+        if (risingH > 0) {
+            const risingBottom = y + h - baseColors.length * segmentH;
+            const risingTop = risingBottom - risingH;
+            
+            ctx.fillStyle = risingHex;
+            ctx.fillRect(x + 4, risingTop + 3, w - 8, risingH - 3); // Base rect
+            
+            // Wavy Top
+            ctx.beginPath();
+            const steps = 20; const stepW = (w-8)/steps;
+            for(let s=0; s<=steps; s++) {
+                const wx = x+4 + s*stepW;
+                const wy = risingTop + 3 * Math.sin(s*0.5 + waveOffset*1.5);
+                if(s===0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+            }
+            ctx.lineTo(x+w-4, risingBottom);
+            ctx.lineTo(x+4, risingBottom);
+            ctx.closePath();
+            ctx.fill();
+            
+            // Highlight Edge
+            ctx.fillStyle = 'rgba(255,255,255,0.4)';
+            ctx.fillRect(x+4, risingTop, w-8, 3);
+        }
+        ctx.restore();
+        
+        VISUALS._drawGlassShell(x, y, w, h, rx, bottomCY, false);
+    },
+
+    drawCork: function(x, y, w, h, progress) {
+        if(progress <= 0) return;
+        const corkH = 16;
+        const corkW = w + 6;
+        const targetY = y - corkH/2;
+        const startY = targetY - 40;
+        
+        // Easing overshoot
+        let t = progress;
+        const overshoot = t < 0.8 ? t/0.8 : 1 + Math.sin((t-0.8)/0.2*Math.PI)*0.1*(1-t);
+        const cy = startY + (targetY - startY) * Math.min(overshoot, 1);
+
+        ctx.save();
+        ctx.translate(x + w/2, cy + corkH/2);
+        
+        // Draw Cork
+        ctx.fillStyle = '#8D6E63'; // Brown
+        ctx.beginPath();
+        ctx.roundRect(-corkW/2, -corkH/2, corkW, corkH, 4);
+        ctx.fill();
+        ctx.strokeStyle = '#5D4037';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        
+        // Detail lines
+        ctx.fillStyle = 'rgba(255,255,255,0.2)';
+        ctx.fillRect(-corkW/2+4, -corkH/2+4, corkW-8, 2);
+
+        ctx.restore();
+    },
+
+    _drawLiquidLayer: function(x, y, w, h, ly, segmentH, hex, waveOffset, isTop) {
+        const waveAmp = isTop ? 3 : 1;
+        
+        ctx.fillStyle = hex;
+        // Rect base
+        ctx.fillRect(x + 4, ly + waveAmp, w - 8, segmentH - waveAmp);
+        
+        // Wave top
+        ctx.beginPath();
+        const steps = 15;
+        const stepW = (w - 8) / steps;
+        for (let s = 0; s <= steps; s++) {
+            const wx = x + 4 + s * stepW;
+            const wy = ly + waveAmp * Math.sin(s * 0.8 + waveOffset + (ly * 0.1));
+            if (s === 0) ctx.moveTo(wx, wy);
+            else ctx.lineTo(wx, wy);
+        }
+        ctx.lineTo(x + w - 4, ly + segmentH);
+        ctx.lineTo(x + 4, ly + segmentH);
+        ctx.closePath();
+        ctx.fill();
+        
+        // Top highlight
+        if (isTop) {
+            ctx.fillStyle = 'rgba(255,255,255,0.25)';
+            ctx.beginPath();
+            for (let s = 0; s <= steps; s++) {
+                const wx = x + 4 + s * stepW;
+                const wy = ly + waveAmp * Math.sin(s * 0.8 + waveOffset + (ly * 0.1));
+                if (s === 0) ctx.moveTo(wx, wy); else ctx.lineTo(wx, wy);
+            }
+            ctx.lineTo(x+w-4, ly+5);
+            ctx.lineTo(x+4, ly+5);
+            ctx.closePath();
+            ctx.fill();
+        }
+    },
+
+    _drawGlassShell: function(x, y, w, h, rx, bottomCY, isSelected) {
+        // Glass Outline
+        ctx.save();
+        ctx.strokeStyle = isSelected ? '#FFD700' : 'rgba(180, 220, 255, 0.55)';
+        ctx.lineWidth = isSelected ? 3.5 : 2;
         ctx.beginPath();
         ctx.moveTo(x, y);
         ctx.lineTo(x, y + h - rx);
@@ -108,40 +276,22 @@ const VISUALS = {
         ctx.quadraticCurveTo(x + w, bottomCY, x + w, y + h - rx);
         ctx.lineTo(x + w, y);
         ctx.stroke();
-        ctx.restore();
 
-        // --- Rim ---
-        ctx.save();
-        ctx.strokeStyle = isSelected ? '#FFD700' : 'rgba(180,220,255,0.55)';
-        ctx.lineWidth = isSelected ? 3.5 : 2;
+        // Rim
         ctx.beginPath();
         ctx.ellipse(x + rx, y, rx, 6, 0, 0, Math.PI * 2);
         ctx.stroke();
-        ctx.restore();
 
-        // --- Glass Shine (Left) ---
-        const shine = ctx.createLinearGradient(x, y, x + w * 0.35, y);
-        shine.addColorStop(0, 'rgba(255,255,255,0.0)');
-        shine.addColorStop(0.4, 'rgba(255,255,255,0.22)');
-        shine.addColorStop(1, 'rgba(255,255,255,0.0)');
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(x, y, w * 0.35, h);
-        ctx.clip();
+        // Glass Shine
+        const shine = ctx.createLinearGradient(x, y, x + w * 0.4, y);
+        shine.addColorStop(0, 'rgba(255,255,255,0)');
+        shine.addColorStop(0.5, 'rgba(255,255,255,0.2)');
+        shine.addColorStop(1, 'rgba(255,255,255,0)');
         ctx.fillStyle = shine;
-        ctx.fillRect(x, y, w * 0.35, h);
+        ctx.beginPath();
+        ctx.rect(x + 2, y, w * 0.4, h - rx);
+        ctx.fill();
         ctx.restore();
-
-        // Selected Glow
-        if (isSelected) {
-            ctx.save();
-            const glow = ctx.createRadialGradient(x+rx, bottomCY, 0, x+rx, bottomCY, rx*2);
-            glow.addColorStop(0, 'rgba(255,215,0,0.4)');
-            glow.addColorStop(1, 'rgba(255,215,0,0)');
-            ctx.fillStyle = glow;
-            ctx.fillRect(x - rx, bottomCY - rx, w + rx*2, rx*2);
-            ctx.restore();
-        }
     },
 
     drawStream: function(sx, sy, ex, ey, color) {
@@ -167,9 +317,9 @@ const VISUALS = {
         ctx.globalAlpha = 1.0;
 
         // Splash Particles
-        for (let i = 0; i < 5; i++) {
+        for (let i = 0; i < 3; i++) {
             const angle = Math.random() * Math.PI * 2;
-            const dist = Math.random() * 12;
+            const dist = Math.random() * 8;
             ctx.beginPath();
             ctx.arc(
                 ex + Math.cos(angle)*dist,
@@ -177,7 +327,7 @@ const VISUALS = {
                 Math.random()*3 + 1, 0, Math.PI*2
             );
             ctx.fillStyle = color;
-            ctx.globalAlpha = Math.random() * 0.7 + 0.3;
+            ctx.globalAlpha = Math.random() * 0.6 + 0.2;
             ctx.fill();
             ctx.globalAlpha = 1;
         }
@@ -192,15 +342,22 @@ class GameEngine {
         this.history = [];
         this.selectedTube = -1;
         
+        // Effects
+        this.particles = [];
+        this.completedTubes = new Set();
+        this.corkAnims = {};
+        this.waveOffset = 0;
+
         this.anim = {
             active: false,
             source: -1,
             target: -1,
-            colorId: 0, // Store INT ID
-            colorHex: '', // Store HEX for draw
+            colorId: 0, 
+            colorHex: '', 
             moveCount: 0,
             phase: 'IDLE',
             progress: 0,
+            fillProgress: 0, // NEW: Target filling
             x: 0, y: 0, angle: 0
         };
 
@@ -212,6 +369,11 @@ class GameEngine {
         this.history = [];
         this.selectedTube = -1;
         this.anim.active = false;
+        
+        // Reset Effects
+        this.particles = [];
+        this.completedTubes = new Set();
+        this.corkAnims = {};
 
         const numColors = Math.min(3 + Math.floor((level - 1) / 2), 9);
         const numEmpty = 2;
@@ -362,27 +524,24 @@ class GameEngine {
 
         if (dest.length >= CONFIG.MAX_CAPACITY) {
             this.selectedTube = -1;
+            AUDIO.play('error'); // Feedback
             return;
         }
 
-        const colorId = src[src.length - 1]; // Top color ID
+        const colorId = src[src.length - 1]; 
         
         // Valid Move?
         if (dest.length === 0 || dest[dest.length - 1] === colorId) {
             
-            // Count layers
             let moveCount = 0;
             for (let i = src.length - 1; i >= 0; i--) {
                 if (src[i] === colorId) moveCount++;
                 else break;
             }
-            // Cap by space
             moveCount = Math.min(moveCount, CONFIG.MAX_CAPACITY - dest.length);
 
-            // Save State
             this.saveState();
 
-            // Init Animation
             this.anim.active = true;
             this.anim.source = from;
             this.anim.target = to;
@@ -391,47 +550,61 @@ class GameEngine {
             this.anim.moveCount = moveCount;
             this.anim.phase = 'MOVING_UP';
             this.anim.progress = 0;
+            this.anim.fillProgress = 0; // Reset fill
             
             this.selectedTube = -1;
             
         } else {
             this.selectedTube = -1;
-            tt.vibrateShort();
+            AUDIO.play('error'); // Better feedback
         }
     }
 
     update() {
+        this.waveOffset += 0.05; // Global Wave
+
+        // Update Corks
+        for (const idx in this.corkAnims) {
+            const ca = this.corkAnims[idx];
+            if (ca.progress < 1) ca.progress = Math.min(ca.progress + 0.08, 1);
+        }
+
         if (!this.anim.active) return;
 
         const layout = this.getLayout();
         const srcPos = layout[this.anim.source];
         const destPos = layout[this.anim.target];
         
-        const targetX = destPos.x + (destPos.w - srcPos.w)/2 - 10; // Slightly left
-        const targetY = destPos.y - 60; // Above
+        const targetX = destPos.x + (destPos.w - srcPos.w)/2 - 10; 
+        const targetY = destPos.y - 60; 
 
         if (this.anim.phase === 'MOVING_UP') {
             this.anim.progress += 0.1;
             this.anim.x = srcPos.x + (targetX - srcPos.x) * this.anim.progress;
             this.anim.y = srcPos.y + (targetY - srcPos.y) * this.anim.progress;
-            this.anim.angle = (Math.PI / 4) * this.anim.progress; // 45 deg
+            this.anim.angle = (Math.PI / 4) * this.anim.progress; 
 
             if (this.anim.progress >= 1) {
                 this.anim.phase = 'POURING';
                 this.anim.progress = 0;
-                AUDIO.play('pour');
+                AUDIO.play('pour_start'); // Start Loop
             }
         }
         else if (this.anim.phase === 'POURING') {
-            this.anim.progress += 0.05;
-            this.anim.angle = Math.PI / 2.5; // Steeper
+            this.anim.progress += 0.04; // Slower pour
+            this.anim.fillProgress = this.anim.progress; // Sync fill
+            this.anim.angle = Math.PI / 2.5; 
 
             if (this.anim.progress >= 1) {
+                AUDIO.play('pour_stop'); // Stop Loop
+                
                 // --- COMMIT DATA ---
                 for (let k = 0; k < this.anim.moveCount; k++) {
                     this.tubes[this.anim.source].pop();
                     this.tubes[this.anim.target].push(this.anim.colorId);
                 }
+                
+                this._checkTubeComplete(this.anim.target); // Check single tube completion
                 
                 this.anim.phase = 'MOVING_BACK';
                 this.anim.progress = 0;
@@ -450,11 +623,44 @@ class GameEngine {
         }
     }
 
+    _checkTubeComplete(idx) {
+        const tube = this.tubes[idx];
+        if (tube.length === CONFIG.MAX_CAPACITY && 
+            tube.every(c => c === tube[0]) && 
+            !this.completedTubes.has(idx)) {
+            
+            this.completedTubes.add(idx);
+            this.corkAnims[idx] = { progress: 0 };
+            AUDIO.play('complete');
+            this._spawnTubeParticles(idx);
+        }
+    }
+
+    _spawnTubeParticles(idx) {
+        const layout = this.getLayout();
+        const pos = layout[idx];
+        const cx = pos.x + pos.w/2;
+        const cy = pos.y;
+        const colors = ['#FFF', '#FFD700'];
+        
+        for(let i=0; i<30; i++) {
+            const angle = -Math.PI/2 + (Math.random()-0.5);
+            const speed = Math.random()*5+2;
+            this.particles.push({
+                x: cx, y: cy,
+                vx: Math.cos(angle)*speed,
+                vy: Math.sin(angle)*speed,
+                color: colors[Math.floor(Math.random()*colors.length)],
+                life: 1.0, size: Math.random()*3+2, shape: 'circle'
+            });
+        }
+    }
+
     draw() {
         // 1. Background
         const grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        grd.addColorStop(0, '#1B1464'); // Deep Purple-Blue
-        grd.addColorStop(1, '#2E0854'); // Darker Purple
+        grd.addColorStop(0, '#1B1464');
+        grd.addColorStop(1, '#2E0854');
         ctx.fillStyle = grd;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -484,13 +690,30 @@ class GameEngine {
         
         // Draw Static Tubes
         for (let i = 0; i < this.tubes.length; i++) {
-            if (this.anim.active && this.anim.source === i) continue; // Skip animating one
+            if (this.anim.active && this.anim.source === i) continue;
 
             const pos = layout[i];
             let drawY = pos.y;
             if (i === this.selectedTube) drawY -= 30;
 
-            VISUALS.drawTube(pos.x, drawY, pos.w, pos.h, this.tubes[i], i === this.selectedTube);
+            // Render Target Tube with Rising Liquid Animation
+            if (this.anim.active && this.anim.target === i && this.anim.phase === 'POURING') {
+                const transColors = [...this.tubes[i]]; // Original colors
+                VISUALS.drawTubeWithRising(
+                    pos.x, drawY, pos.w, pos.h, 
+                    transColors, this.anim.colorId, this.anim.moveCount, 
+                    this.anim.fillProgress, this.waveOffset
+                );
+            } else {
+                VISUALS.drawTube(pos.x, drawY, pos.w, pos.h, this.tubes[i], i === this.selectedTube, this.waveOffset);
+            }
+
+            // Draw Cork if complete
+            if (this.completedTubes && this.completedTubes.has(i)) {
+                const ca = this.corkAnims ? this.corkAnims[i] : null;
+                const progress = ca ? ca.progress : 1;
+                VISUALS.drawCork(pos.x, drawY, pos.w, pos.h, progress);
+            }
         }
 
         // Draw Animating Tube
@@ -502,7 +725,7 @@ class GameEngine {
             ctx.translate(this.anim.x + w/2, this.anim.y);
             ctx.rotate(this.anim.angle);
             
-            VISUALS.drawTube(-w/2, 0, w, h, this.tubes[this.anim.source], true);
+            VISUALS.drawTube(-w/2, 0, w, h, this.tubes[this.anim.source], true, this.waveOffset);
             ctx.restore();
 
             // Stream
