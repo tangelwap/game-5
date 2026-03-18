@@ -36,7 +36,7 @@ const AUDIO = {
     init: function() {
         this.bgm.src = 'audio/bgm.mp3';
         this.bgm.loop = true;
-        this.bgm.volume = 0.4;
+        this.bgm.volume = 0.2; // 调小背景音量
         
         this.select.src = 'audio/select.wav'; 
         this.select.volume = 0.6;
@@ -109,6 +109,18 @@ const AUDIO = {
         if (name === 'complete') tt.vibrateShort();
         if (name === 'error') tt.vibrateShort();
         if (name === 'win') tt.vibrateLong();
+    },
+
+    pauseBgm: function() {
+        this.bgm.pause();
+    },
+    
+    resumeBgm: function() {
+        this.bgm.play();
+    },
+    
+    stopWin: function() {
+        this.win.stop();
     }
 };
 AUDIO.init();
@@ -410,7 +422,11 @@ class GameEngine {
         }
         
         this.tubes = state;
-        AUDIO.play('bgm');
+        
+        // 只有第一次进入游戏才启动 BGM
+        if (level === 1) {
+            AUDIO.play('bgm');
+        }
     }
 
     saveState() {
@@ -436,14 +452,24 @@ class GameEngine {
         );
         
         if (solved) {
-            AUDIO.play('win');
-            tt.showModal({
-                title: '好茶！',
-                content: `恭喜通过第 ${this.level} 品。`,
-                confirmText: '下一品',
-                showCancel: false,
-                success: () => this.initLevel(this.level + 1)
-            });
+            AUDIO.pauseBgm(); // 先暂停 BGM
+            AUDIO.play('win'); // 播放胜利音效
+            
+            this._spawnTubeParticles(this.anim.target); // 触发烟花
+            
+            setTimeout(() => {
+                tt.showModal({
+                    title: '好茶！',
+                    content: `恭喜通过第 ${this.level} 品。`,
+                    confirmText: '下一品',
+                    showCancel: false,
+                    success: () => {
+                        AUDIO.stopWin(); // 用户点击时立即停止 win
+                        AUDIO.resumeBgm(); // 恢复 BGM
+                        this.initLevel(this.level + 1);
+                    }
+                });
+            }, 1500);
         }
     }
 
