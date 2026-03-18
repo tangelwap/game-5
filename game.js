@@ -48,7 +48,7 @@ const AUDIO = {
         this.complete.src = 'audio/complete.wav'; 
         this.complete.volume = 0.8;
         
-        this.win.src = 'audio/win.mp3';
+        this.win.src = 'audio/win.wav'; // FIXED: Changed to .wav
         this.win.volume = 1.0;
         
         this.error.src = 'audio/error.wav'; 
@@ -455,7 +455,7 @@ class GameEngine {
             AUDIO.pauseBgm(); // 先暂停 BGM
             AUDIO.play('win'); // 播放胜利音效
             
-            this._spawnTubeParticles(this.anim.target); // 触发烟花
+            this._spawnParticles(); // FIXED: Uses global fireworks instead of specific tube
             
             setTimeout(() => {
                 tt.showModal({
