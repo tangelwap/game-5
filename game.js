@@ -38,20 +38,20 @@ const AUDIO = {
         this.bgm.loop = true;
         this.bgm.volume = 0.4;
         
-        this.select.src = 'audio/select.mp3';
+        this.select.src = 'audio/select.wav'; // Change to .wav
         this.select.volume = 0.6;
         
-        this.pour.src = 'audio/pour.mp3';
+        this.pour.src = 'audio/pour.mp3'; // Keep as mp3 if you didn't change it
         this.pour.loop = true;
-        this.pour.volume = 0; // Fade in
+        this.pour.volume = 0; 
         
-        this.complete.src = 'audio/complete.mp3';
+        this.complete.src = 'audio/complete.wav'; // Change to .wav
         this.complete.volume = 0.8;
         
         this.win.src = 'audio/win.mp3';
         this.win.volume = 1.0;
         
-        this.error.src = 'audio/error.mp3';
+        this.error.src = 'audio/error.wav'; // Change to .wav
         this.error.volume = 0.5;
     },
     
