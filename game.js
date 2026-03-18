@@ -19,6 +19,14 @@ const CONFIG = {
     MAX_CAPACITY: 4
 };
 
+const LEVEL_THEMES = [
+    { bg1: '#0D2B1A', bg2: '#1A4A2E', starColor: 'rgba(200,255,200,{a})', deco: 'bamboo', title: '初级·识色' },
+    { bg1: '#1A1A2E', bg2: '#16213E', starColor: 'rgba(180,200,255,{a})', deco: 'rain', title: '进阶·听雨' },
+    { bg1: '#2D1200', bg2: '#4A1E00', starColor: 'rgba(255,200,150,{a})', deco: 'leaves', title: '高手·落叶' },
+    { bg1: '#1A1A2A', bg2: '#0D0D1A', starColor: 'rgba(220,230,255,{a})', deco: 'snow', title: '大师·傲雪' },
+    { bg1: '#1B1464', bg2: '#2E0854', starColor: 'rgba(255,255,255,{a})', deco: 'cloud', title: '传奇·凌云' },
+];
+
 // Canvas Setup
 canvas.width = systemInfo.windowWidth;
 canvas.height = systemInfo.windowHeight;
@@ -689,16 +697,106 @@ class GameEngine {
         }
     }
 
+    _drawThemeDeco(type) {
+        ctx.save();
+        if (type === 'bamboo') {
+            ctx.strokeStyle = 'rgba(80,160,80,0.15)';
+            ctx.lineWidth = 8;
+            [30, 55, canvas.width - 30, canvas.width - 55].forEach(x => {
+                ctx.beginPath();
+                ctx.moveTo(x, canvas.height);
+                ctx.lineTo(x + (Math.random()-0.5)*10, 0);
+                ctx.stroke();
+                for (let y = 80; y < canvas.height; y += 60) {
+                    ctx.beginPath();
+                    ctx.moveTo(x - 6, y);
+                    ctx.lineTo(x + 6, y);
+                    ctx.lineWidth = 2;
+                    ctx.stroke();
+                    ctx.lineWidth = 8;
+                }
+            });
+        } else if (type === 'rain') {
+            ctx.strokeStyle = 'rgba(150,180,255,0.08)';
+            ctx.lineWidth = 1;
+            for (let i = 0; i < 40; i++) {
+                const x = (i * 97 + this.waveOffset * 3) % canvas.width;
+                const y = (i * 137 + this.waveOffset * 8) % canvas.height;
+                ctx.beginPath();
+                ctx.moveTo(x, y);
+                ctx.lineTo(x - 4, y + 20);
+                ctx.stroke();
+            }
+        } else if (type === 'leaves') {
+            if (!this._leaves) {
+                this._leaves = Array.from({length: 12}, () => ({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    size: Math.random() * 8 + 6,
+                    speed: Math.random() * 0.5 + 0.3,
+                    swing: Math.random() * Math.PI * 2,
+                }));
+            }
+            this._leaves.forEach(leaf => {
+                leaf.y += leaf.speed;
+                leaf.x += Math.sin(leaf.swing + this.waveOffset * 0.5) * 0.8;
+                if (leaf.y > canvas.height + 20) {
+                    leaf.y = -20;
+                    leaf.x = Math.random() * canvas.width;
+                }
+                ctx.fillStyle = `rgba(200,80,20,0.25)`;
+                ctx.beginPath();
+                ctx.ellipse(leaf.x, leaf.y, leaf.size, leaf.size * 0.5, this.waveOffset * 0.3, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        } else if (type === 'snow') {
+            if (!this._snowflakes) {
+                this._snowflakes = Array.from({length: 25}, () => ({
+                    x: Math.random() * canvas.width,
+                    y: Math.random() * canvas.height,
+                    r: Math.random() * 2.5 + 1,
+                    speed: Math.random() * 0.4 + 0.2,
+                }));
+            }
+            this._snowflakes.forEach(s => {
+                s.y += s.speed;
+                s.x += Math.sin(this.waveOffset * 0.3 + s.y * 0.01) * 0.5;
+                if (s.y > canvas.height + 10) { s.y = -10; s.x = Math.random() * canvas.width; }
+                ctx.beginPath();
+                ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
+                ctx.fillStyle = 'rgba(220,235,255,0.4)';
+                ctx.fill();
+            });
+        } else if (type === 'cloud') {
+            ctx.fillStyle = 'rgba(255,255,255,0.04)';
+            [0.2, 0.5, 0.75].forEach((yRatio, i) => {
+                const cx = ((this.waveOffset * (i + 1) * 0.3) % (canvas.width + 200)) - 100;
+                const cy = canvas.height * yRatio;
+                ctx.beginPath();
+                ctx.ellipse(cx, cy, 80, 25, 0, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.ellipse(cx + 40, cy - 15, 50, 20, 0, 0, Math.PI * 2);
+                ctx.fill();
+            });
+        }
+        ctx.restore();
+    }
+
     draw() {
+        const themeIdx = Math.min(Math.floor((this.level - 1) / 2), LEVEL_THEMES.length - 1);
+        const theme = LEVEL_THEMES[themeIdx];
+
         // 1. Background
         const grd = ctx.createLinearGradient(0, 0, 0, canvas.height);
-        grd.addColorStop(0, '#1B1464');
-        grd.addColorStop(1, '#2E0854');
+        grd.addColorStop(0, theme.bg1);
+        grd.addColorStop(1, theme.bg2);
         ctx.fillStyle = grd;
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw Stars
-        if (!this.stars) {
+        // 2. Stars / Theme Base
+        if (!this.stars || this._lastTheme !== themeIdx) {
+            this._lastTheme = themeIdx;
             this.stars = Array.from({length: 80}, () => ({
                 x: Math.random() * canvas.width,
                 y: Math.random() * canvas.height,
@@ -707,17 +805,24 @@ class GameEngine {
             }));
         }
         this.stars.forEach(s => {
+            const color = theme.starColor.replace('{a}', s.alpha);
             ctx.beginPath();
             ctx.arc(s.x, s.y, s.r, 0, Math.PI*2);
-            ctx.fillStyle = `rgba(255,255,255,${s.alpha})`;
+            ctx.fillStyle = color;
             ctx.fill();
         });
 
-        // 2. Title
-        ctx.fillStyle = '#FFF';
-        ctx.font = 'bold 32px Arial';
+        // 3. Deco
+        this._drawThemeDeco(theme.deco);
+
+        // 4. Title
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.font = 'bold 24px Arial';
         ctx.textAlign = 'center';
-        ctx.fillText(`第 ${this.level} 品`, canvas.width / 2, 80);
+        ctx.fillText(theme.title, canvas.width / 2, 55);
+        ctx.font = '16px Arial';
+        ctx.fillStyle = 'rgba(255,255,255,0.5)';
+        ctx.fillText(`第 ${this.level} 关`, canvas.width / 2, 78);
 
         const layout = this.getLayout();
         
@@ -729,9 +834,8 @@ class GameEngine {
             let drawY = pos.y;
             if (i === this.selectedTube) drawY -= 30;
 
-            // Render Target Tube with Rising Liquid Animation
             if (this.anim.active && this.anim.target === i && this.anim.phase === 'POURING') {
-                const transColors = [...this.tubes[i]]; // Original colors
+                const transColors = [...this.tubes[i]]; 
                 VISUALS.drawTubeWithRising(
                     pos.x, drawY, pos.w, pos.h, 
                     transColors, this.anim.colorId, this.anim.moveCount, 
@@ -741,7 +845,6 @@ class GameEngine {
                 VISUALS.drawTube(pos.x, drawY, pos.w, pos.h, this.tubes[i], i === this.selectedTube, this.waveOffset);
             }
 
-            // Draw Cork if complete
             if (this.completedTubes && this.completedTubes.has(i)) {
                 const ca = this.corkAnims ? this.corkAnims[i] : null;
                 const progress = ca ? ca.progress : 1;
