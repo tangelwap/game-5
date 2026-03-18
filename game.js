@@ -6,16 +6,25 @@ const systemInfo = tt.getSystemInfoSync();
 const canvas = tt.createCanvas();
 const ctx = canvas.getContext('2d');
 
-// --- 1. Configuration ---
+// --- 1. Configuration & Data ---
+const TEA_DATA = {
+    1: { hex: '#8B3A2A', name: '普洱',   desc: '陈香醇厚' },
+    2: { hex: '#C8A050', name: '铁观音', desc: '兰花清幽' },
+    3: { hex: '#5A8A3C', name: '龙井',   desc: '清冽回甘' },
+    4: { hex: '#E8D5A0', name: '白毫银针', desc: '毫香蜜韵' },
+    5: { hex: '#C46A2A', name: '大红袍', desc: '岩骨花香' },
+    6: { hex: '#F5E6C8', name: '茉莉',   desc: '鲜灵持久' },
+    7: { hex: '#A0522D', name: '滇红',   desc: '浓强鲜爽' },
+    8: { hex: '#6B8E5A', name: '碧螺春', desc: '嫩香持久' },
+    9: { hex: '#D4A060', name: '武夷岩茶', desc: '花果蜜香' },
+};
+
 const CONFIG = {
-    COLORS: [
-        'transparent',
-        '#FF5252', '#448AFF', '#69F0AE', '#FFD740', 
-        '#E040FB', '#FF6E40', '#607D8B', '#795548', '#FF4081'
-    ],
-    TUBE_WIDTH: 60,
-    TUBE_HEIGHT: 240,
-    TUBE_GAP: 25,
+    COLORS: ['transparent', ...Object.values(TEA_DATA).map(t => t.hex)],
+    TEA_NAMES: ['', ...Object.values(TEA_DATA).map(t => t.name)],
+    TUBE_WIDTH: 70, // Slightly wider for teacups
+    TUBE_HEIGHT: 180, // Shorter for teacups
+    TUBE_GAP: 30,
     MAX_CAPACITY: 4
 };
 
