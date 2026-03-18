@@ -28,9 +28,9 @@ const AUDIO = {
     bgm: tt.createInnerAudioContext(),
     select: tt.createInnerAudioContext(),
     pour: tt.createInnerAudioContext(),
-    complete: tt.createInnerAudioContext(), // New
+    complete: tt.createInnerAudioContext(), 
     win: tt.createInnerAudioContext(),
-    error: tt.createInnerAudioContext(),    // New
+    error: tt.createInnerAudioContext(),    
     isPlaying: false,
     
     init: function() {
@@ -38,25 +38,32 @@ const AUDIO = {
         this.bgm.loop = true;
         this.bgm.volume = 0.4;
         
-        this.select.src = 'audio/select.wav'; // Change to .wav
+        this.select.src = 'audio/select.wav'; 
         this.select.volume = 0.6;
         
-        this.pour.src = 'audio/pour.mp3'; // Keep as mp3 if you didn't change it
+        this.pour.src = 'audio/pour.wav'; // Change to .wav as requested
         this.pour.loop = true;
         this.pour.volume = 0; 
         
-        this.complete.src = 'audio/complete.wav'; // Change to .wav
+        this.complete.src = 'audio/complete.wav'; 
         this.complete.volume = 0.8;
         
         this.win.src = 'audio/win.mp3';
         this.win.volume = 1.0;
         
-        this.error.src = 'audio/error.wav'; // Change to .wav
+        this.error.src = 'audio/error.wav'; 
         this.error.volume = 0.5;
+
+        // Debug callbacks
+        ['select', 'pour', 'complete', 'win', 'error'].forEach(name => {
+            this[name].onError((err) => {
+                console.error(`[AUDIO] ${name} error:`, JSON.stringify(err));
+            });
+        });
     },
     
     startPour: function() {
-        this.pour.stop();
+        this.pour.seek(0);
         this.pour.volume = 0;
         this.pour.play();
         let vol = 0;
@@ -93,14 +100,14 @@ const AUDIO = {
         if (name === 'pour_stop') { this.stopPour(); return; }
         
         if (this[name]) {
-            this[name].stop();
+            this[name].seek(0); // Fix for rapid playback overlap
             this[name].play();
         }
         
-        // Haptics
-        if (name === 'select') tt.vibrateShort({ type: 'light' });
-        if (name === 'complete') tt.vibrateShort({ type: 'medium' });
-        if (name === 'error') tt.vibrateShort({ type: 'heavy' });
+        // Haptics - Removed {type: '...'} which crashes TT mini-app
+        if (name === 'select') tt.vibrateShort();
+        if (name === 'complete') tt.vibrateShort();
+        if (name === 'error') tt.vibrateShort();
         if (name === 'win') tt.vibrateLong();
     }
 };
